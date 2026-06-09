@@ -30,6 +30,9 @@ import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ThreadMessage } from '@janhq/core'
+import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
+import { useThreadReadStatus } from '@/stores/thread-read-store'
+import { ThreadStatusDot } from '@/components/left-sidebar/ThreadStatusDot'
 
 //* Заголовок приветственного треда: новый бренд и старая строка из прошлых версий
 const WELCOME_THREAD_TITLES = new Set([
@@ -146,6 +149,15 @@ const ThreadItem = memo(
       }
     }
 
+    const isBusy = useChatSessions((state) =>
+      isSessionBusy(state.sessions[thread.id])
+    )
+    const isUnread = useThreadReadStatus(
+      (state) => thread.id in state.unreadThreads
+    )
+    const showStatusDot = isBusy || isUnread
+    const threadTitle = thread.title || t('common:newThread')
+
     const MenuItemWrapper = subItem ? SidebarMenuSubItem : SidebarMenuItem
     const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
 
@@ -157,7 +169,10 @@ const ThreadItem = memo(
             params={{ threadId: thread.id }}
             className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block"
           >
-            <span>{thread.title || t('common:newThread')}</span>
+            <span className="flex items-center gap-2 pr-8">
+              {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
+              <span className="truncate flex-1">{threadTitle}</span>
+            </span>
             {currentProjectId && lastUserMessageText && (
               <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
                 {lastUserMessageText}
@@ -167,7 +182,10 @@ const ThreadItem = memo(
         ) : (
           <MenuButtonWrapper asChild>
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
-              <span>{thread.title || t('common:newThread')}</span>
+              <span className="flex w-full items-center gap-2">
+                {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
+                <span className="truncate flex-1">{threadTitle}</span>
+              </span>
             </Link>
           </MenuButtonWrapper>
         )}

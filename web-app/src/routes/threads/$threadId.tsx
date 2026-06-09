@@ -27,6 +27,7 @@ import {
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
+import { useThreadReadStatus } from '@/stores/thread-read-store'
 import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
@@ -453,6 +454,7 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
+    useThreadReadStatus.getState().markRead(threadId)
     const assistant = assistants.find(
       (assistant) => assistant.id === thread?.assistants?.[0]?.id
     )
