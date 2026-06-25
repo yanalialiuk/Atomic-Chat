@@ -357,20 +357,65 @@ export async function getBackendDir(
   return backendDir
 }
 
+/**
+ * Bounded-depth recursive search for a file named `name` under `dir`.
+ * Returns the first match's absolute path, or null. Fallback for archives that
+ * unpack with an unexpected extra top-level folder so the exe lands deeper than
+ * the canonical layouts below. Bounded so a deep/odd tree can't stall startup.
+ */
+async function findFileRecursive(
+  dir: string,
+  name: string,
+  maxDepth: number = 4
+): Promise<string | null> {
+  if (maxDepth < 0 || !(await fs.existsSync(dir))) return null
+  let entries: string[]
+  try {
+    entries = await fs.readdirSync(dir)
+  } catch {
+    return null
+  }
+  const subDirs: string[] = []
+  for (const entry of entries) {
+    const full = await joinPath([dir, entry])
+    try {
+      const st = await fs.fileStat(full)
+      if (st?.isDirectory) {
+        subDirs.push(full)
+      } else if (entry === name) {
+        return full
+      }
+    } catch {
+      if (entry === name) return full
+    }
+  }
+  for (const sub of subDirs) {
+    const found = await findFileRecursive(sub, name, maxDepth - 1)
+    if (found) return found
+  }
+  return null
+}
+
 export async function getBackendExePath(
   backend: string,
   version: string
 ): Promise<string> {
   const exe_name = IS_WINDOWS ? 'llama-server.exe' : 'llama-server'
   const backendDir = await getBackendDir(backend, version)
-  let exePath: string
-  const buildDir = await joinPath([backendDir, 'build'])
-  if (await fs.existsSync(buildDir)) {
-    exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
-  } else {
-    exePath = await joinPath([backendDir, exe_name])
-  }
-  return exePath
+
+  // Canonical layouts (fast path): nested CMake build, or a flat archive.
+  const buildBinPath = await joinPath([backendDir, 'build', 'bin', exe_name])
+  if (await fs.existsSync(buildBinPath)) return buildBinPath
+  const flatPath = await joinPath([backendDir, exe_name])
+  if (await fs.existsSync(flatPath)) return flatPath
+
+  // Fallback: some tarballs unpack with an extra top-level folder, so the exe
+  // lands deeper than the canonical paths. Search before giving up.
+  const found = await findFileRecursive(backendDir, exe_name)
+  if (found) return found
+
+  // Not found: canonical nested path so existence checks fail cleanly.
+  return buildBinPath
 }
 
 export async function isBackendInstalled(

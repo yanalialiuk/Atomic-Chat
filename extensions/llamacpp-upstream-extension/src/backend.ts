@@ -626,20 +626,72 @@ export async function getBackendDir(
   return backendDir
 }
 
+/**
+ * Bounded-depth recursive search for a file named `name` under `dir`.
+ * Returns the first match's absolute path, or null.
+ *
+ * Fallback for backend archives that unpack with an unexpected extra
+ * top-level folder (e.g. ggml-org ubuntu tarballs that contain
+ * `<archive-name>/build/bin/llama-server`), which the two canonical layouts
+ * below don't catch — the cause of the "downloaded but UI says not installed,
+ * re-download loop" bug. Bounded so a deep/odd tree can't stall startup.
+ */
+async function findFileRecursive(
+  dir: string,
+  name: string,
+  maxDepth: number = 4
+): Promise<string | null> {
+  if (maxDepth < 0 || !(await fs.existsSync(dir))) return null
+  let entries: string[]
+  try {
+    entries = await fs.readdirSync(dir)
+  } catch {
+    return null
+  }
+  const subDirs: string[] = []
+  for (const entry of entries) {
+    const full = await joinPath([dir, entry])
+    try {
+      const st = await fs.fileStat(full)
+      if (st?.isDirectory) {
+        subDirs.push(full)
+      } else if (entry === name) {
+        return full
+      }
+    } catch {
+      // Unreadable entry: if the name matches, still treat it as the exe.
+      if (entry === name) return full
+    }
+  }
+  for (const sub of subDirs) {
+    const found = await findFileRecursive(sub, name, maxDepth - 1)
+    if (found) return found
+  }
+  return null
+}
+
 export async function getBackendExePath(
   backend: string,
   version: string
 ): Promise<string> {
   const exe_name = IS_WINDOWS ? 'llama-server.exe' : 'llama-server'
   const backendDir = await getBackendDir(backend, version)
-  let exePath: string
-  const buildDir = await joinPath([backendDir, 'build'])
-  if (await fs.existsSync(buildDir)) {
-    exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
-  } else {
-    exePath = await joinPath([backendDir, exe_name])
-  }
-  return exePath
+
+  // Canonical layouts (fast path): nested CMake build, or a flat archive.
+  const buildBinPath = await joinPath([backendDir, 'build', 'bin', exe_name])
+  if (await fs.existsSync(buildBinPath)) return buildBinPath
+  const flatPath = await joinPath([backendDir, exe_name])
+  if (await fs.existsSync(flatPath)) return flatPath
+
+  // Fallback: some upstream tarballs unpack with an extra top-level folder, so
+  // the exe lands deeper than the canonical paths. Search for it before giving
+  // up, so detection/loading survives layout differences.
+  const found = await findFileRecursive(backendDir, exe_name)
+  if (found) return found
+
+  // Not found: return the canonical nested path so callers' existence checks
+  // fail cleanly and any error message points at the expected location.
+  return buildBinPath
 }
 
 export async function isBackendInstalled(

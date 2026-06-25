@@ -18,6 +18,7 @@ vi.mock('@janhq/core', () => ({
   fs: {
     existsSync: vi.fn(),
     readdirSync: vi.fn().mockResolvedValue([]),
+    fileStat: vi.fn(),
     rm: vi.fn().mockResolvedValue(undefined),
   },
   joinPath: vi.fn(async (paths: string[]) => paths.join('/')),
@@ -92,6 +93,47 @@ describe('Backend functions', () => {
       expect(exePath).toBe(
         `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64/build/bin/llama-server`
       )
+    })
+
+    it('finds llama-server when the archive unpacks with an extra top-level folder', async () => {
+      // Repro of the "downloaded but UI says not installed" re-download loop:
+      // the ggml-org ubuntu tarball unpacks to
+      //   <backendDir>/<archive-name>/build/bin/llama-server
+      // which neither canonical path (<dir>/build/bin or <dir>/) catches.
+      const backendDir =
+        '/path/to/jan/llamacpp/backends/b9691/linux-vulkan-x64'
+      const archive = `${backendDir}/llama-b9691-bin-ubuntu-vulkan-x64`
+      const buildDir = `${archive}/build`
+      const binDir = `${buildDir}/bin`
+      const exe = `${binDir}/llama-server`
+
+      const dirs = new Set([backendDir, archive, buildDir, binDir])
+      const children: Record<string, string[]> = {
+        [backendDir]: ['llama-b9691-bin-ubuntu-vulkan-x64'],
+        [archive]: ['build'],
+        [buildDir]: ['bin'],
+        [binDir]: ['llama-server'],
+      }
+
+      // Canonical paths don't exist; everything else (incl. the real exe) does.
+      vi.mocked(fs.existsSync).mockImplementation(async (p: string) => {
+        if (p === `${backendDir}/build/bin/llama-server`) return false
+        if (p === `${backendDir}/llama-server`) return false
+        return true
+      })
+      vi.mocked(fs.readdirSync).mockImplementation(
+        async (p: string) => children[p] ?? []
+      )
+      vi.mocked(fs.fileStat).mockImplementation(async (p: string) => ({
+        isDirectory: dirs.has(p),
+        size: 1,
+      }))
+
+      const exePath = await getBackendExePath('linux-vulkan-x64', 'b9691')
+      expect(exePath).toBe(exe)
+
+      const installed = await isBackendInstalled('linux-vulkan-x64', 'b9691')
+      expect(installed).toBe(true)
     })
   })
 
