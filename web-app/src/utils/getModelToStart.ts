@@ -26,8 +26,10 @@ function findFirstLocalModel(
 ): { model: string; provider: ModelProvider } | null {
   for (const name of localProviderNames) {
     const provider = getProviderByName(name)
+
+    // Skip broken-link models (weights file gone) — loading them only crashes.
     const firstUsable = provider?.models?.find(
-      (m) => m.id !== EMBEDDING_MODEL_ID
+      (m) => m.id !== EMBEDDING_MODEL_ID && !(m as { missing?: boolean }).missing
     )
     if (provider && firstUsable) {
       return { model: firstUsable.id, provider }
@@ -48,7 +50,10 @@ export const getModelToStart = (params: {
   const lastUsedModel = getLastUsedModel()
   if (lastUsedModel) {
     const provider = getProviderByName(lastUsedModel.provider)
-    if (provider && provider.models.some((m) => m.id === lastUsedModel.model)) {
+    const lastModel = provider?.models.find((m) => m.id === lastUsedModel.model)
+
+    // A broken-link last-used model must not be reloaded — fall through to a healthy one.
+    if (provider && lastModel && !(lastModel as { missing?: boolean }).missing) {
       return { model: lastUsedModel.model, provider }
     } else {
       const fallback = findFirstLocalModel(getProviderByName)

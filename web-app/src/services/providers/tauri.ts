@@ -109,6 +109,12 @@ export class TauriProvidersService extends DefaultProvidersService {
                 description: model.description,
                 capabilities,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
+                // Origin of an imported model, for the UI badge.
+                source: (model as { source?: Model['source'] }).source,
+                // Broken-link flag: keep out of auto-start, flag in the UI.
+                missing: (model as { missing?: boolean }).missing,
+                // Absolute weights path, for deduping scan candidates.
+                path: (model as { path?: string }).path,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {

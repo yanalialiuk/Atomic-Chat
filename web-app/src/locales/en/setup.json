@@ -14,6 +14,17 @@
   "turboQuantTagline": "Local AI models on your device — blazing fast on average hardware.",
   "skip": "Skip",
   "modelUnavailable": "Not in catalog yet — open Hub after connection.",
+  "localStep": {
+    "titleOne": "Found 1 model on your machine",
+    "titleOther": "Found {{count}} models on your machine",
+    "descriptionOne": "This model is already downloaded by another app. Run it here instantly — no re-download.",
+    "descriptionOther": "These are already downloaded by other apps. Run them here instantly — no re-download.",
+    "run": "Run",
+    "running": "Importing…",
+    "requiresBaseModel": "Requires base model",
+    "browseInstead": "Browse the catalog instead",
+    "importFailed": "Couldn't import model"
+  },
   "backendStep": {
     "title": "Optimize llama.cpp for your GPU",
     "description": "We can install a faster backend tailored to your hardware. The base CPU build is already bundled — this is the recommended optional upgrade.",

@@ -2631,6 +2631,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
+    const janDataFolderPath = await getJanDataFolderPath()
+
     let modelInfos: modelInfo[] = []
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
@@ -2645,6 +2647,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
         capabilities.push('vision')
       }
 
+      // Broken-link detection: flag a missing weights file so the UI marks it and auto-start skips it.
+      const resolvedPath = await this.resolveModelPath(
+        janDataFolderPath,
+        modelConfig.model_path
+      )
+      const missing = resolvedPath
+        ? !(await fs.existsSync(resolvedPath).catch(() => true))
+        : false
+
       const modelInfo = {
         id: modelId,
         name: modelConfig.name ?? modelId,
@@ -2654,11 +2665,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
         sizeBytes: modelConfig.size_bytes ?? 0,
         embedding: isEmbedding,
         capabilities: capabilities.length > 0 ? capabilities : undefined,
+        source: (modelConfig as { source?: string }).source,
+        missing,
+        path: resolvedPath,
       } as modelInfo
       modelInfos.push(modelInfo)
     }
 
     return modelInfos
+  }
+
+  // Resolve `model_path` (absolute or data-folder-relative) like `load()`; undefined if unknown.
+  private async resolveModelPath(
+    janDataFolderPath: string,
+    modelPath?: string
+  ): Promise<string | undefined> {
+    if (!modelPath) return undefined
+    try {
+      return await joinPath([janDataFolderPath, modelPath])
+    } catch {
+      return undefined
+    }
   }
 
   private async migrateLegacyModels() {
@@ -2917,6 +2944,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
         `Invalid modelId: ${modelId}. Only alphanumeric and / _ - . characters are allowed.`
       )
 
+    // Origin of an externally-detected model (cast: optional field may lag the
+    // built @janhq/core types until the package is rebuilt).
+    const importSource = (opts as { source?: string }).source
+
     const configPath = await joinPath([
       await this.getModelsRootPath(),
       modelId,
@@ -3107,6 +3138,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
+      ...(importSource ? { source: importSource } : {}),
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
@@ -3123,6 +3155,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
+      source: importSource,
     })
   }
 

@@ -133,6 +133,55 @@ pub fn write_file_sync<R: Runtime>(
     fs::write(&path, content).map_err(|e| e.to_string())
 }
 
+/// Returns the current OS user's real home directory (e.g. `/Users/<name>` or
+/// `C:\Users\<name>`), NOT the Jan data folder. Used by the local-model scanner
+/// to locate other apps' model stores (Ollama / LM Studio / HF cache / Unsloth).
+#[tauri::command]
+pub fn get_os_home_dir() -> Result<String, String> {
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Could not resolve OS home directory".to_string())
+}
+
+/// Creates a filesystem link from `link` to an existing `target`, WITHOUT
+/// copying data. Used to expose Ollama's content-addressed blobs as runnable
+/// `*.gguf` files under `<ollama>/.studio_links/`. Prefers a symlink; falls back
+/// to a hard link when symlinks aren't permitted (e.g. Windows without
+/// developer mode). Returns "symlink" or "hardlink" to indicate which was used.
+/// Parent directories of `link` are created as needed. Never copies blobs —
+/// callers should skip the model if this fails.
+#[tauri::command]
+pub fn create_symlink(target: String, link: String) -> Result<String, String> {
+    use std::path::Path;
+    let target_path = Path::new(&target);
+    if !target_path.exists() {
+        return Err(format!("create_symlink: target does not exist: {target}"));
+    }
+    let link_path = Path::new(&link);
+    if let Some(parent) = link_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    // Idempotent: drop any stale link before recreating it.
+    if fs::symlink_metadata(link_path).is_ok() {
+        let _ = fs::remove_file(link_path);
+    }
+
+    #[cfg(unix)]
+    let symlink_result = std::os::unix::fs::symlink(target_path, link_path);
+    #[cfg(windows)]
+    let symlink_result = std::os::windows::fs::symlink_file(target_path, link_path);
+
+    match symlink_result {
+        Ok(()) => Ok("symlink".to_string()),
+        Err(symlink_err) => match fs::hard_link(target_path, link_path) {
+            Ok(()) => Ok("hardlink".to_string()),
+            Err(hardlink_err) => Err(format!(
+                "create_symlink failed (symlink: {symlink_err}; hardlink: {hardlink_err})"
+            )),
+        },
+    }
+}
+
 #[tauri::command]
 pub fn readdir_sync<R: Runtime>(
     app_handle: tauri::AppHandle<R>,

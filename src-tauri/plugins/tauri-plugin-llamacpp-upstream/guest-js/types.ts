@@ -111,6 +111,7 @@ export interface ModelConfig {
    * and for Qwen-style built-in MTP.
    */
   mtp_draft_path?: string
+  source?: string
 }
 
 export interface EmbeddingResponse {

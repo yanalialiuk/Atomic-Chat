@@ -9,8 +9,13 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 
 type HeaderPageProps = {
   children?: ReactNode
+  // Onboarding has no sidebar to toggle, so it hides the download + toggle cluster.
+  hideControls?: boolean
 }
-const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
+const HeaderPage = memo(function HeaderPage({
+  children,
+  hideControls,
+}: HeaderPageProps) {
   const { open, setLeftPanel } = useLeftPanel()
 
   return (
@@ -34,7 +39,7 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
           'flex items-center w-full gap-1',
         )}
       >
-        {!open && (
+        {!open && !hideControls && (
           <>
             <DownloadManagement />
             <Button

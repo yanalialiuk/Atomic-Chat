@@ -586,6 +586,8 @@ export function DataProvider() {
           )
           .flatMap((p) => p.models)
           .filter((m) => m.id !== EMBEDDING_MODEL_ID)
+          // Never fall back to a broken-link model.
+          .filter((m) => !m.missing)
 
         const serverState = useLocalApiServer.getState()
 
@@ -614,7 +616,18 @@ export function DataProvider() {
           if (!candidate) return null
           const p = allProviders.find((pr) => pr.provider === candidate.provider)
           if (!p) return null
-          if (!p.models.some((m) => m.id === candidate.model)) return null
+          const m = p.models.find((mm) => mm.id === candidate.model)
+          if (!m) return null
+
+          // Broken link (file gone): auto-starting just crashes, so skip it.
+          if (m.missing) {
+            console.log(
+              '[LocalAPI:startup] Skipping auto-start of broken-link model (file missing):',
+              candidate
+            )
+            return null
+          }
+
           return candidate
         }
 

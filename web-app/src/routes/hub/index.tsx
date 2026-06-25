@@ -176,6 +176,8 @@ function HubContent() {
   >({})
   const enrichedOrphansFetchedRef = useRef<Set<string>>(new Set())
   const providers = useModelProvider((state) => state.providers)
+  const setProviders = useModelProvider((state) => state.setProviders)
+  const scanLocalModelsEnabled = useGeneralSetting((s) => s.scanLocalModels)
 
   const toggleModelExpansion = useCallback((modelId: string) => {
     setExpandedModels((prev) => ({
@@ -604,6 +606,27 @@ function HubContent() {
       fetchSources()
     })
   }, [fetchSources])
+
+  // Re-list engines on Hub enter / window focus so a deleted external file shows its broken badge.
+  useEffect(() => {
+    if (!scanLocalModelsEnabled) return
+    let cancelled = false
+    const refresh = () => {
+      serviceHub
+        .providers()
+        .getProviders()
+        .then((fetched) => {
+          if (!cancelled) setProviders(fetched)
+        })
+        .catch(() => {})
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', refresh)
+    }
+  }, [scanLocalModelsEnabled, serviceHub, setProviders])
 
   // Reset initial load state after data loads or on filter change
   useEffect(() => {

@@ -425,6 +425,12 @@ export default class mlx_extension extends AIEngine {
         logger.warn(`Failed to check tool support for ${modelId}: ${e}`)
       }
 
+      // Broken-link detection: flag a missing weights file/dir so the UI marks it and auto-start skips it.
+      const resolvedPath = await this.resolveModelPath(modelConfig.model_path)
+      const missing = resolvedPath
+        ? !(await fs.existsSync(resolvedPath).catch(() => true))
+        : false
+
       modelInfos.push({
         id: modelId,
         name: modelConfig.name ?? modelId,
@@ -433,10 +439,27 @@ export default class mlx_extension extends AIEngine {
         sizeBytes: modelConfig.size_bytes ?? 0,
         embedding: modelConfig.embedding ?? false,
         capabilities: capabilities.length > 0 ? capabilities : undefined,
+        source: (modelConfig as { source?: string }).source,
+        missing,
+        path: resolvedPath,
       } as modelInfo)
     }
 
     return modelInfos
+  }
+
+  // Resolve `model_path` (absolute or data-folder-relative) like `load()`; undefined if unknown.
+  private async resolveModelPath(
+    modelPath?: string
+  ): Promise<string | undefined> {
+    if (!modelPath) return undefined
+    try {
+      return modelPath.startsWith('/') || modelPath.includes(':')
+        ? modelPath
+        : await joinPath([await getJanDataFolderPath(), modelPath])
+    } catch {
+      return undefined
+    }
   }
 
   private async getRandomPort(): Promise<number> {
@@ -1306,6 +1329,14 @@ export default class mlx_extension extends AIEngine {
         size_bytes,
       }
 
+      // Origin of a model imported by absolute path from another app (LM Studio
+      // / Unsloth / HF cache). Persisted so the UI can label it. Cast: optional
+      // field may lag the built @janhq/core types until the package is rebuilt.
+      const importSource = (opts as { source?: string }).source
+      if (importSource) {
+        modelConfig.source = importSource
+      }
+
       // For vision models, add mmproj_path
       if (isVision) {
         modelConfig.mmproj_path = sourcePath
@@ -1340,6 +1371,7 @@ export default class mlx_extension extends AIEngine {
         modelPath: sourcePath,
         size_bytes,
         capabilities: capabilities,
+        source: importSource,
       })
     }
   }

@@ -36,6 +36,17 @@ type Model = {
   settings?: Record<string, ProviderSetting>
   /** Whether this model is an embedding model (e.g., BERT-based) */
   embedding?: boolean
+  // Origin of a model imported from another app's storage, shown as a UI badge.
+  source?:
+    | 'ollama'
+    | 'lmstudio'
+    | 'unsloth'
+    | 'local'
+    | 'huggingface-cache'
+  // Runtime-computed: weights file (or Ollama symlink target) is gone — a "broken link".
+  missing?: boolean
+  // Resolved absolute weights path; used to dedupe scan candidates vs imported models.
+  path?: string
 }
 
 /**
