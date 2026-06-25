@@ -1947,9 +1947,8 @@ export default class llamacpp_extension extends AIEngine {
       // check if model.yml exists
       const modelConfigPath = await joinPath([currentDir, 'model.yml'])
       if (await fs.existsSync(modelConfigPath)) {
-        // +1 to remove the leading slash
-        // NOTE: this does not handle Windows path \\
-        modelIds.push(currentDir.slice(modelsDir.length + 1))
+        // Normalize Windows '\' to '/' so the id matches the catalog
+        modelIds.push(currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/'))
         continue
       }
 
@@ -2068,9 +2067,8 @@ export default class llamacpp_extension extends AIEngine {
               })
               const legacyModelPath = legacyModelConfig.files?.[0]
               if (!legacyModelPath) continue
-              // +1 to remove the leading slash
-              // NOTE: this does not handle Windows path \\
-              let modelId = currentDir.slice(modelsDir.length + 1)
+              // Normalize Windows '\' to '/' so the id matches the catalog
+              let modelId = currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
 
               modelId =
                 modelId !== 'imported'
