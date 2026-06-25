@@ -25,6 +25,11 @@ type GeneralSettingState = {
   preloadModelOnStartup: boolean
   maxImageSizePx: number
   huggingfaceToken?: string
+  scanLocalModels: boolean
+  localScanFolders: string[]
+  // Drives the "New" pill on the Integrations nav item — cleared on first visit.
+  integrationsBadgeSeen: boolean
+  markIntegrationsBadgeSeen: () => void
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
@@ -33,6 +38,9 @@ type GeneralSettingState = {
   setPreloadModelOnStartup: (value: boolean) => void
   setMaxImageSizePx: (value: number) => void
   setCurrentLanguage: (value: Language) => void
+  setScanLocalModels: (value: boolean) => void
+  addLocalScanFolder: (folder: string) => void
+  removeLocalScanFolder: (folder: string) => void
 }
 
 export const useGeneralSetting = create<GeneralSettingState>()(
@@ -46,6 +54,13 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       preloadModelOnStartup: true,
       maxImageSizePx: DEFAULT_MAX_IMAGE_SIZE_PX,
       huggingfaceToken: undefined,
+      scanLocalModels: true,
+      localScanFolders: [],
+      integrationsBadgeSeen: false,
+      markIntegrationsBadgeSeen: () =>
+        set((state) =>
+          state.integrationsBadgeSeen ? state : { integrationsBadgeSeen: true }
+        ),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
@@ -54,6 +69,17 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       setMaxImageSizePx: (value) =>
         set({ maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0 }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
+      setScanLocalModels: (value) => set({ scanLocalModels: value }),
+      addLocalScanFolder: (folder) =>
+        set((state) => {
+          const trimmed = folder.trim()
+          if (!trimmed || state.localScanFolders.includes(trimmed)) return state
+          return { localScanFolders: [...state.localScanFolders, trimmed] }
+        }),
+      removeLocalScanFolder: (folder) =>
+        set((state) => ({
+          localScanFolders: state.localScanFolders.filter((f) => f !== folder),
+        })),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })
         ExtensionManager.getInstance()

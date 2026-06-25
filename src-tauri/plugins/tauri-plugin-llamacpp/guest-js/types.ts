@@ -97,6 +97,7 @@ export interface ModelConfig {
   mmproj_sha256?: string
   mmproj_size_bytes?: number
   embedding?: boolean
+  source?: string
 }
 
 export interface EmbeddingResponse {

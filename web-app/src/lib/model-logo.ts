@@ -7,6 +7,7 @@
 const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/deepseek/i, '/svg/deepseek-color.svg'],
   [/gemma/i, '/svg/gemma-color.svg'],
+  [/\bglm\b|chatglm/i, '/svg/chatglm-color.svg'],
   [/qwen|qwq/i, '/svg/qwen-color.svg'],
   [/llama|meta-llama/i, '/svg/meta-color.svg'],
   [/mi[sx]tral|magistral|ministral|codestral|devstral/i, '/images/model-provider/mistral.svg'],

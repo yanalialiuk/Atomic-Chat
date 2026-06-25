@@ -27,6 +27,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useAppState } from '@/hooks/useAppState'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
@@ -469,6 +470,11 @@ function LaunchPage() {
   useEffect(() => {
     INTEGRATION_AGENTS.forEach((agent) => detect(agent))
   }, [detect])
+
+  // First visit clears the sidebar "New" pill on Integrations.
+  useEffect(() => {
+    useGeneralSetting.getState().markIntegrationsBadgeSeen()
+  }, [])
 
   useEffect(() => {
     refreshRunningModels()

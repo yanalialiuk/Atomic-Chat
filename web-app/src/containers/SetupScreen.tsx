@@ -21,8 +21,15 @@ import {
 } from '@/lib/models'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelLoad } from '@/hooks/useModelLoad'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
+import SetupLocalModelsStep from './SetupLocalModelsStep'
+import {
+  scanLocalModels,
+  collectImportedModelPaths,
+  type LocalModelCandidate,
+} from '@/services/models/localScan'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useShallow } from 'zustand/shallow'
 import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
@@ -74,8 +81,11 @@ type SetupScreenProps = {
 ///     to download the optimal llama.cpp backend. Skipped on macOS/Linux
 ///     and on Windows after the user has been through it once
 ///     (`localStorageKey.llamacppOnboardingDone` is set).
+///   - 'local' — one-click import of models already downloaded by other apps
+///     (LM Studio / HF cache / Unsloth). Shown only when the scanner finds
+///     candidates, between 'backend' and 'model'.
 ///   - 'model' — the existing model recommendation/selection screen.
-type OnboardingStep = 'backend' | 'model'
+type OnboardingStep = 'backend' | 'local' | 'model'
 
 function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
@@ -147,9 +157,65 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   >(new Map())
   const hasNavigatedRef = useRef(false)
 
+  // Local-model detection: null = still scanning, [] = nothing found. We never
+  // block onboarding on a slow scan (4s safety timeout below).
+  const [localCandidates, setLocalCandidates] = useState<
+    LocalModelCandidate[] | null
+  >(null)
+  const [localStepResolved, setLocalStepResolved] = useState(false)
+  const [importingLocalId, setImportingLocalId] = useState<string | null>(null)
+
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
+
+  // Onboarding owns the whole screen: a model that crashed on auto-start (e.g. a
+  // stale lastUsedModel) must not throw its raw stderr toast over the setup flow.
+  useEffect(() => {
+    useModelLoad.getState().setSuppressErrorToast(true)
+    toast.dismiss('model-load-error')
+    return () => useModelLoad.getState().setSuppressErrorToast(false)
+  }, [])
+
+  // Scan once for models from other apps (honors Settings toggle/folders + dedup).
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      if (!cancelled) setLocalCandidates((prev) => prev ?? [])
+    }, 4000)
+
+    const { scanLocalModels: enabled, localScanFolders } =
+      useGeneralSetting.getState()
+    const importedPaths = collectImportedModelPaths(
+      useModelProvider.getState().providers
+    )
+
+    void scanLocalModels({ enabled, extraRoots: localScanFolders, importedPaths })
+      .then((found) => {
+        if (!cancelled) setLocalCandidates(found)
+      })
+      .catch(() => {
+        if (!cancelled) setLocalCandidates([])
+      })
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [])
+
+  // Promote to the 'local' step once the scan finds candidates, but only when
+  // we'd otherwise be showing the model picker (i.e. not mid-backend-step and
+  // the user hasn't already passed/skipped the local step).
+  useEffect(() => {
+    if (
+      step === 'model' &&
+      !localStepResolved &&
+      localCandidates &&
+      localCandidates.length > 0
+    ) {
+      setStep('local')
+    }
+  }, [step, localStepResolved, localCandidates])
 
   const recommendedItems = useResolvedRecommendedModels(sources)
 
@@ -369,6 +435,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         localStorageKey.lastUsedModel,
         JSON.stringify({ provider: providerName, model: modelId })
       )
+
+      // Onboarding ran with the sidebar collapsed; entering chat opens it.
+      useLeftPanel.getState().setLeftPanel(true)
+
       navigate({
         to: route.home,
         replace: true,
@@ -431,6 +501,110 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [navigate]
   )
 
+  // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
+  const providerForCandidate = useCallback(
+    (cand: LocalModelCandidate): LocalLlamacppProvider | 'mlx' =>
+      cand.format === 'mlx'
+        ? 'mlx'
+        : (LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider),
+    []
+  )
+
+  // Fire-and-forget import of runnable candidates into the library — no launch,
+  // no navigation (they're not tracked). Importing is ~free (a model.yml that
+  // points at the existing file; for Ollama, a symlink — no gigabyte copy), so
+  // we add every detected model regardless of what the user does next. A single
+  // failure mustn't block the others; once all settle, refresh the library so
+  // they appear even if this screen has moved on.
+  const importCandidatesInBackground = useCallback(
+    (cands: LocalModelCandidate[]) => {
+      const runnable = cands.filter((c) => c.runnable)
+      if (runnable.length === 0) return
+      const imports = runnable.map((c) => {
+        const eng = EngineManager.instance().get(providerForCandidate(c))
+        if (!eng) return Promise.resolve()
+        return eng
+          .import(c.id, {
+            modelPath: c.path,
+            mmprojPath: c.mmprojPath,
+            source: c.source,
+          })
+          .catch(() => {})
+      })
+      void Promise.allSettled(imports).then(async () => {
+        try {
+          const refreshed = await serviceHub.providers().getProviders()
+          setProviders(refreshed)
+        } catch {
+          // best-effort: a later provider refresh will surface them
+        }
+      })
+    },
+    [providerForCandidate, serviceHub, setProviders]
+  )
+
+  // Import a model detected on disk (no download). The engine writes a
+  // model.yml pointing at the existing file and emits AppEvent.onModelImported,
+  // which the effect above turns into navigation into chat.
+  //
+  // Importing is ~free (just a model.yml referencing the existing file; for
+  // Ollama, a symlink — no gigabyte copy), so when several models are detected
+  // we also import the rest in the background. The user launches the one they
+  // clicked, and every other detected model still lands in the library without
+  // re-download — nothing is lost, no extra clicks.
+  const onRunLocalModel = useCallback(
+    async (cand: LocalModelCandidate) => {
+      if (!cand.runnable || importingLocalId) return
+      const providerName = providerForCandidate(cand)
+      const engine = EngineManager.instance().get(providerName)
+      if (!engine) {
+        toast.error(t('setup:localStep.importFailed'), {
+          description: `Engine ${providerName} not available`,
+        })
+        return
+      }
+
+      setImportingLocalId(cand.id)
+      // Only the chosen model is tracked, so only it triggers navigation.
+      trackedImportIdsRef.current.set(cand.id, providerName)
+
+      // Add every other detected model to the library in the background.
+      importCandidatesInBackground(
+        (localCandidates ?? []).filter((c) => c.id !== cand.id)
+      )
+
+      try {
+        await engine.import(cand.id, {
+          modelPath: cand.path,
+          mmprojPath: cand.mmprojPath,
+          source: cand.source,
+        })
+      } catch (error) {
+        trackedImportIdsRef.current.delete(cand.id)
+        setImportingLocalId(null)
+        toast.error(t('setup:localStep.importFailed'), {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    },
+    [
+      importingLocalId,
+      importCandidatesInBackground,
+      localCandidates,
+      providerForCandidate,
+      t,
+    ]
+  )
+
+  // "Browse the catalog instead": the user skips running a detected model, but
+  // detected models must still land in the library no matter what — so import
+  // them all (no launch) before moving on to the default download flow.
+  const handleLocalSkip = useCallback(() => {
+    importCandidatesInBackground(localCandidates ?? [])
+    setLocalStepResolved(true)
+    setStep('model')
+  }, [importCandidatesInBackground, localCandidates])
+
   const handleSkip = useCallback(() => {
     try {
       const hadAnyModel = providers.some(
@@ -449,6 +623,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     window.dispatchEvent(new Event('app:setup-completed'))
     localStorage.removeItem(localStorageKey.lastUsedModel)
     onSkipped?.()
+
+    // Leaving onboarding for the main app — restore the sidebar.
+    useLeftPanel.getState().setLeftPanel(true)
+
     void navigate({
       to: route.home,
       replace: true,
@@ -463,10 +641,35 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     return <SetupBackendStep onDone={handleBackendStepDone} />
   }
 
+  if (step === 'local' && localCandidates && localCandidates.length > 0) {
+    return (
+      <SetupLocalModelsStep
+        candidates={localCandidates}
+        importingId={importingLocalId}
+        onRun={onRunLocalModel}
+        onSkip={handleLocalSkip}
+      />
+    )
+  }
+
+  // Brief scanning state so we don't flash the model picker when locals exist.
+  if (step === 'model' && !localStepResolved && localCandidates === null) {
+    return (
+      <div className="relative flex h-svh w-full flex-col overflow-hidden">
+        <HeaderPage hideControls />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-muted-foreground text-sm">
+            {t('common:loading')}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="relative flex h-svh w-full flex-col overflow-hidden">
       <div className="flex h-svh min-h-0 w-full flex-col">
-        <HeaderPage />
+        <HeaderPage hideControls />
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[840px] flex-col px-6 py-8 sm:px-10 sm:py-10">

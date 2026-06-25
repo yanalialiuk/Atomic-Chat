@@ -602,6 +602,10 @@ function reportModelLoadError(rawError: unknown, providerName?: string): void {
   const err = toErrorObject(rawError)
   useModelLoad.getState().setModelLoadError(err)
 
+  // During onboarding a crashed auto-start must not throw a raw stderr toast on
+  // the setup screen — keep the error in the store but skip the user-facing toast.
+  if (useModelLoad.getState().suppressErrorToast) return
+
   const t = i18n.t.bind(i18n)
 
   if (isOutOfMemoryError(err)) {

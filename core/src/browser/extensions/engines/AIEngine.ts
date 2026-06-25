@@ -160,6 +160,13 @@ export interface chatCompletion {
 }
 // --- End OpenAI types ---
 
+export type ImportedModelSource =
+  | 'ollama'
+  | 'lmstudio'
+  | 'unsloth'
+  | 'local'
+  | 'huggingface-cache'
+
 // Shared model metadata
 export interface modelInfo {
   id: string // e.g. "qwen3-4B" or "org/model/quant"
@@ -170,6 +177,8 @@ export interface modelInfo {
   sizeBytes: number
   tags?: string[]
   path?: string // Absolute path to the model file, if applicable
+  source?: ImportedModelSource
+  missing?: boolean
   // Additional provider-specific metadata can be added here
   embedding?: boolean
   [key: string]: any
@@ -212,6 +221,7 @@ export interface ImportOptions {
   mmprojSha256?: string
   mmprojSize?: number
   resume?: boolean
+  source?: ImportedModelSource
   // Additional files to download for MLX models
   files?: Array<{
     url: string
