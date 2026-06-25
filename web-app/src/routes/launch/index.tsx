@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useAppState } from '@/hooks/useAppState'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
@@ -39,6 +40,29 @@ export const Route = createFileRoute(route.launch.index as any)({
 // Only reveal the in-button spinner once an action has been running longer
 // than this; near-instant config writes finish first and never flash it.
 const SPINNER_DELAY_MS = 350
+
+// Snapshot the app proxy config (if enabled) into the payload the Rust
+// `install_agent` / `open_agent_terminal` commands expect, so spawned installers
+// and the launched agent can reach the network behind a region block. Returns
+// undefined when no proxy is configured, so the commands omit proxy env.
+function buildProxyPayload():
+  | { url: string; username?: string; password?: string; no_proxy?: string }
+  | undefined {
+  const {
+    proxyEnabled,
+    proxyUrl,
+    proxyUsername,
+    proxyPassword,
+    noProxy,
+  } = useProxyConfig.getState()
+  if (!proxyEnabled || !proxyUrl.trim()) return undefined
+  return {
+    url: proxyUrl.trim(),
+    username: proxyUsername.trim() || undefined,
+    password: proxyPassword || undefined,
+    no_proxy: noProxy.trim() || undefined,
+  }
+}
 
 function IconBox({
   children,
@@ -504,7 +528,10 @@ function LaunchPage() {
             }))
           }
         )
-        await invoke('install_agent', { agentId: agent.id })
+        await invoke('install_agent', {
+          agentId: agent.id,
+          proxy: buildProxyPayload(),
+        })
         toast.success(t('launch:toast.installSuccess', { name: agent.name }), {
           description: t('launch:toast.installSuccessDesc', {
             name: agent.name,
@@ -514,8 +541,15 @@ function LaunchPage() {
         return true
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        // Surface a localized, actionable hint for network/DNS failures
+        // (commonly a region block with no proxy); keep the raw detail otherwise.
+        const isNetworkFailure = /dns|tunnel|proxy|os error 11001|wsahost_not_found|could not reach the network|resolve host|getaddrinfo|name resolution/i.test(
+          msg
+        )
         toast.error(t('launch:toast.installFailed', { name: agent.name }), {
-          description: msg,
+          description: isNetworkFailure
+            ? t('launch:toast.installFailedNetworkDesc')
+            : msg,
         })
         return false
       } finally {
@@ -682,7 +716,10 @@ function LaunchPage() {
           } else {
             command = agent.detectBin
           }
-          await invoke('open_agent_terminal', { command })
+          await invoke('open_agent_terminal', {
+            command,
+            proxy: buildProxyPayload(),
+          })
         } catch (termErr) {
           const tmsg =
             termErr instanceof Error ? termErr.message : String(termErr)
