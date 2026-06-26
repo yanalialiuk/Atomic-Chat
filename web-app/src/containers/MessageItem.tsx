@@ -73,11 +73,12 @@ export const MessageItem = memo(
   }: MessageItemProps) => {
     const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
-    // Global "Disable reasoning" toggle: some providers (e.g. MiniMax) ignore
-    // every known API flag and keep streaming chain-of-thought. Hide those
-    // parts in the UI so the experience matches the user's intent.
+    // Reasoning toggle: some providers (e.g. MiniMax) ignore every known API
+    // flag and keep streaming chain-of-thought. Hide those parts in the UI
+    // only when the user explicitly turned reasoning OFF (not in `auto`/`on`),
+    // so the experience matches their intent.
     const disableReasoning = useGeneralSetting(
-      (state) => state.disableReasoning
+      (state) => state.reasoningMode === 'off'
     )
     const [previewImage, setPreviewImage] = useState<{
       url: string

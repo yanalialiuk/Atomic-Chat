@@ -10,6 +10,18 @@ export type ReasoningBudgetLevel =
   | 'unlimited'
 
 /**
+ * Reasoning toggle, tri-state (follows Jan):
+ *  - `off`  → explicitly tell the provider NOT to think (enable_thinking=false…)
+ *  - `on`   → explicitly tell the provider TO think (enable_thinking=true…)
+ *  - `auto` → send nothing; let the model/template decide (its own default)
+ *
+ * The old binary `disableReasoning` couldn't request thinking when on — it only
+ * sent a flag when off — so providers whose template defaults thinking off
+ * (e.g. NVIDIA NIM serving Gemma) produced no reasoning. `on` now forces it.
+ */
+export type ReasoningMode = 'auto' | 'on' | 'off'
+
+/**
  * Longest-edge cap (in pixels) applied to images before they are sent to the
  * model. Large images otherwise flood the context window. `0` disables
  * downscaling. Default keeps quality high while taming 4K photos/screenshots.
@@ -20,7 +32,7 @@ type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
   tokenCounterCompact: boolean
-  disableReasoning: boolean
+  reasoningMode: ReasoningMode
   reasoningBudget: ReasoningBudgetLevel
   preloadModelOnStartup: boolean
   maxImageSizePx: number
@@ -33,7 +45,7 @@ type GeneralSettingState = {
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
-  setDisableReasoning: (value: boolean) => void
+  setReasoningMode: (value: ReasoningMode) => void
   setReasoningBudget: (value: ReasoningBudgetLevel) => void
   setPreloadModelOnStartup: (value: boolean) => void
   setMaxImageSizePx: (value: number) => void
@@ -49,7 +61,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       currentLanguage: 'en',
       spellCheckChatInput: true,
       tokenCounterCompact: true,
-      disableReasoning: true,
+      reasoningMode: 'auto',
       reasoningBudget: 'medium',
       preloadModelOnStartup: true,
       maxImageSizePx: DEFAULT_MAX_IMAGE_SIZE_PX,
@@ -63,7 +75,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         ),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
-      setDisableReasoning: (value) => set({ disableReasoning: value }),
+      setReasoningMode: (value) => set({ reasoningMode: value }),
       setReasoningBudget: (value) => set({ reasoningBudget: value }),
       setPreloadModelOnStartup: (value) => set({ preloadModelOnStartup: value }),
       setMaxImageSizePx: (value) =>
@@ -103,6 +115,22 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
+      version: 1,
+      // v0 → v1: the binary `disableReasoning` became the tri-state
+      // `reasoningMode`. Preserve the user's existing choice: true → 'off',
+      // false → 'on'. New installs default to 'auto' (model decides).
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>
+        if (
+          version < 1 &&
+          typeof state.disableReasoning === 'boolean' &&
+          state.reasoningMode === undefined
+        ) {
+          state.reasoningMode = state.disableReasoning ? 'off' : 'on'
+        }
+        delete state.disableReasoning
+        return state as unknown as GeneralSettingState
+      },
     }
   )
 )

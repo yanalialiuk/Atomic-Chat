@@ -529,15 +529,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           samplingState.userOverridden
         )
 
-        // Global "Disable reasoning" setting — best-effort: dispatch the
-        // provider-specific flag that skips the thinking phase. Unknown keys
-        // are silently ignored by most providers, but we still branch per
-        // provider to stay safe with stricter APIs (e.g. Anthropic).
+        // Global reasoning toggle (tri-state: off / on / auto) — best-effort:
+        // dispatch the provider-specific flag that turns the thinking phase
+        // on or off. Unknown keys are silently ignored by most providers, but
+        // we still branch per provider to stay safe with stricter APIs (e.g.
+        // Anthropic). `auto` sends nothing and lets the model/template decide.
         //
         // The override is kept SEPARATE from `inferenceParams` so local-only
         // fields (top_k, repeat_penalty, …) never leak into cloud-provider
         // request bodies. See ModelFactory for the fetch wiring.
-        const { disableReasoning, reasoningBudget } =
+        const { reasoningMode, reasoningBudget } =
           useGeneralSetting.getState()
         const reasoningOverride: Record<string, unknown> = {}
         const reasoningBudgetTokens: Record<
@@ -550,7 +551,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           high: 4096,
           unlimited: undefined,
         }
-        if (disableReasoning || reasoningBudget === 'off') {
+        // A `reasoningBudget` of `off` is an explicit "no thinking" request and
+        // forces the disable path regardless of the toggle mode.
+        if (reasoningMode === 'off' || reasoningBudget === 'off') {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'llamacpp-upstream':
@@ -591,15 +594,49 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 enable_thinking: false,
               }
           }
-        } else if (
-          (effectiveProviderName === 'llamacpp' ||
-            effectiveProviderName === 'llamacpp-upstream' ||
-            effectiveProviderName === 'mlx') &&
-          reasoningBudgetTokens[reasoningBudget] !== undefined
-        ) {
-          reasoningOverride.reasoning_budget =
-            reasoningBudgetTokens[reasoningBudget]
+        } else if (reasoningMode === 'on') {
+          // Reasoning is explicitly ON. The toggle used to be one-directional:
+          // it only sent a flag when DISABLING, and relied on the model
+          // thinking by default when enabled. That breaks on providers whose
+          // chat template defaults `enable_thinking=false` — notably custom
+          // OpenAI-compatible gateways like NVIDIA NIM serving Gemma: the
+          // toggle is on but nothing requests thinking, so zero reasoning.
+          //
+          // Send a positive enable hint symmetric to the disable branch.
+          // `chat_template_kwargs.enable_thinking=true` is safe: servers that
+          // don't use it ignore unknown keys. Named cloud providers
+          // (openai/anthropic/google/xai/moonshot) already think by default and
+          // have stricter schemas, so we leave them untouched here.
+          switch (effectiveProviderName) {
+            case 'llamacpp':
+            case 'llamacpp-upstream':
+            case 'mlx':
+              reasoningOverride.chat_template_kwargs = {
+                enable_thinking: true,
+              }
+              if (reasoningBudgetTokens[reasoningBudget] !== undefined) {
+                reasoningOverride.reasoning_budget =
+                  reasoningBudgetTokens[reasoningBudget]
+              }
+              break
+            case 'anthropic':
+            case 'openai':
+            case 'xai':
+            case 'google':
+            case 'gemini':
+            case 'moonshot':
+              // Think by default; injecting flags risks schema conflicts.
+              break
+            default:
+              // Custom OpenAI-compatible providers (NVIDIA NIM, self-hosted
+              // gateways). Safe hint; ignored by servers that don't use it.
+              reasoningOverride.chat_template_kwargs = {
+                enable_thinking: true,
+              }
+          }
         }
+        // reasoningMode === 'auto': intentionally send no flag — let the model
+        // and its chat template decide whether to think.
         const hasOverride = Object.keys(reasoningOverride).length > 0
 
         // Audio attachments (omni/audio-capable models, MLX backend) are
