@@ -71,11 +71,11 @@ describe('Backend functions', () => {
       ) // Mock build dir check
 
       const dir = await getBackendDir('linux-avx2-x64', 'v1.2.3')
-      expect(dir).toBe(`/path/to/jan/llamacpp/backends/v1.2.3/linux-avx2-x64`)
+      expect(dir).toBe(`/path/to/jan/llamacpp-upstream/backends/v1.2.3/linux-avx2-x64`)
 
       const exePath = await getBackendExePath('linux-avx2-x64', 'v1.2.3')
       expect(exePath).toBe(
-        `/path/to/jan/llamacpp/backends/v1.2.3/linux-avx2-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp-upstream/backends/v1.2.3/linux-avx2-x64/build/bin/llama-server`
       )
     })
 
@@ -86,12 +86,12 @@ describe('Backend functions', () => {
 
       const dir = await getBackendDir('win-common_cpus-x64', 'v2.0.0')
       expect(dir).toBe(
-        `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64`
+        `/path/to/jan/llamacpp-upstream/backends/v2.0.0/win-common_cpus-x64`
       )
 
       const exePath = await getBackendExePath('win-common_cpus-x64', 'v2.0.0')
       expect(exePath).toBe(
-        `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp-upstream/backends/v2.0.0/win-common_cpus-x64/build/bin/llama-server`
       )
     })
 
@@ -101,7 +101,7 @@ describe('Backend functions', () => {
       //   <backendDir>/<archive-name>/build/bin/llama-server
       // which neither canonical path (<dir>/build/bin or <dir>/) catches.
       const backendDir =
-        '/path/to/jan/llamacpp/backends/b9691/linux-vulkan-x64'
+        '/path/to/jan/llamacpp-upstream/backends/b9691/linux-vulkan-x64'
       const archive = `${backendDir}/llama-b9691-bin-ubuntu-vulkan-x64`
       const buildDir = `${archive}/build`
       const binDir = `${buildDir}/bin`
@@ -142,7 +142,7 @@ describe('Backend functions', () => {
       vi.stubGlobal('IS_WINDOWS', false) // Linux/macOS for llama-server
       // Mock both the check for the 'build' directory and the final executable path
       vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-        const expectedExePath = `/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        const expectedExePath = `/path/to/jan/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
         if (path === expectedExePath) return true
         if (path.endsWith('/build')) return true
         return false
@@ -152,7 +152,7 @@ describe('Backend functions', () => {
       expect(result).toBe(true)
       // Check that it was called with the final exe path
       expect(fs.existsSync).toHaveBeenCalledWith(
-        `/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
       )
     })
   })
@@ -161,7 +161,7 @@ describe('Backend functions', () => {
       vi.stubGlobal('IS_WINDOWS', false) // Linux/macOS for llama-server
       // Mock both the check for the 'build' directory and the final executable path
       vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-        const expectedExePath = `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        const expectedExePath = `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
         if (path === expectedExePath) return true
         if (path.endsWith('/build')) return true
         return false
@@ -171,7 +171,7 @@ describe('Backend functions', () => {
       expect(result).toBe(true)
       // Check that it was called with the final exe path
       expect(fs.existsSync).toHaveBeenCalledWith(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
       )
     })
   })
