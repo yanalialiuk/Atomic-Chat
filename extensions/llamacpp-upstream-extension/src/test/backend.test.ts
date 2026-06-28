@@ -225,10 +225,16 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
 
     await fetchRemoteBackends()
 
-    expect(tauriFetch).toHaveBeenCalledTimes(1)
-    const calledUrl = vi.mocked(tauriFetch).mock.calls[0][0]
-    expect(calledUrl).toBe(RAW_MANIFEST_URL)
-    expect(calledUrl).not.toContain('api.github.com')
+    // fetchManifestWithFallbacks races three transports in parallel via
+    // Promise.any: webview fetch (globalThis.fetch, unmocked here) plus the
+    // proxy-aware and direct tauri-fetch fallbacks — so tauriFetch fires
+    // twice. The point of this test is the URL, not the call count: every
+    // attempt must hit the raw atomic-chat-conf manifest, never api.github.com.
+    expect(tauriFetch).toHaveBeenCalled()
+    for (const call of vi.mocked(tauriFetch).mock.calls) {
+      expect(call[0]).toBe(RAW_MANIFEST_URL)
+      expect(call[0]).not.toContain('api.github.com')
+    }
   })
 
   it('returns the whitelisted Windows backend catalog', async () => {
