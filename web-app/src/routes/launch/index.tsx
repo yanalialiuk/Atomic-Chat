@@ -271,6 +271,12 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           <span className="text-xs font-bold text-white">n8n</span>
         </IconBox>
       )
+    case 'marimo':
+      return (
+        <IconBox bg="#0f766e">
+          <span className="text-sm font-semibold text-white">m</span>
+        </IconBox>
+      )
     default:
       return (
         <IconBox bg="#52525b">

@@ -329,4 +329,26 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
       ],
     },
   },
+  {
+    id: 'marimo',
+    name: 'marimo',
+    description:
+      'Reactive Python notebooks with AI chat and inline code completion.',
+    kind: 'notebook',
+    detectBin: 'marimo',
+    docsUrl: 'https://docs.marimo.io/guides/editor_features/ai_completion/',
+    installable: false,
+    configurable: false,
+    requiresModel: false,
+    endpointWithPrefix: true,
+    editor: {
+      launchId: 'marimo',
+      steps: [
+        'Open marimo → Settings → AI → configure an OpenAI-compatible provider.',
+        'Set the base URL to the copied value (include /v1).',
+        'Enable the models you want in the model list.',
+        'Use AI chat or turn on inline completion under AI Features.',
+      ],
+    },
+  },
 ]

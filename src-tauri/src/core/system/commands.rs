@@ -3679,6 +3679,16 @@ pub fn launch_editor(editor_id: String) -> Result<(), String> {
             log::info!("Opened n8n UI at http://localhost:5678");
             return Ok(());
         }
+        "marimo" => {
+            if try_spawn("marimo", &["edit"]) {
+                log::info!("Launched marimo via 'marimo edit'");
+                return Ok(());
+            }
+            Err(
+                "Couldn't find marimo on this system. Install it with pip or uv and try again."
+                    .to_string(),
+            )
+        }
         other => return Err(format!("Unknown editor: {}", other)),
     };
 
