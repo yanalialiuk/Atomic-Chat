@@ -141,6 +141,9 @@ const TERMINAL_LOAD_CODES = new Set([
   // only a manual re-download resolves it, so don't loop the auto-start.
   'MODEL_FILE_CORRUPT',
   'BINARY_NOT_FOUND',
+  // The engine build can't parse this model's architecture/format (e.g. a
+  // newer qwen3vl GGUF). Retrying loads the same unsupported file — never auto-retry.
+  'MODEL_ARCH_NOT_SUPPORTED',
   // ATO-190: the bundled macOS engine requires a newer macOS than the host
   // (missing Metal symbol). This never resolves on retry, so never auto-retry.
   'OS_VERSION_UNSUPPORTED',
@@ -304,6 +307,7 @@ export async function switchToModel(params: {
   modelId: string
   providerName: string
   serviceHub: ServiceHub
+  isAutoStart?: boolean
 }): Promise<void> {
   // Wait for any in-flight switch to complete before starting a new one.
   while (activeSwitchPromise) {
@@ -355,8 +359,9 @@ async function doSwitchToModel(params: {
   modelId: string
   providerName: string
   serviceHub: ServiceHub
+  isAutoStart?: boolean
 }): Promise<void> {
-  const { modelId, providerName, serviceHub } = params
+  const { modelId, providerName, serviceHub, isAutoStart } = params
 
   const { setServerStatus, setActiveModels, updateLoadingModel } =
     useAppState.getState()
@@ -517,7 +522,7 @@ async function doSwitchToModel(params: {
         )
       }
     }
-    reportModelLoadError(error, providerName)
+    reportModelLoadError(error, providerName, isAutoStart, modelId)
     throw error
   } finally {
     useAppState.getState().updateLoadingModel(false)
@@ -598,13 +603,20 @@ function unsupportedDescription(
  * Surface a user-visible banner when a model fails to load.
  * OOM errors get a persistent toast so the user cannot miss them.
  */
-function reportModelLoadError(rawError: unknown, providerName?: string): void {
+function reportModelLoadError(
+  rawError: unknown,
+  providerName?: string,
+  isAutoStart?: boolean,
+  modelId?: string
+): void {
   const err = toErrorObject(rawError)
-  useModelLoad.getState().setModelLoadError(err)
+  useModelLoad.getState().setModelLoadError(err, modelId)
 
-  // During onboarding a crashed auto-start must not throw a raw stderr toast on
-  // the setup screen — keep the error in the store but skip the user-facing toast.
-  if (useModelLoad.getState().suppressErrorToast) return
+  // Only user-initiated loads surface a toast. Automatic/background loads
+  // (startup auto-start, ChatInput auto-start, onboarding launches, post-import
+  // auto-switch) pass `isAutoStart` and fail silently — the error is still
+  // stored above for any inline UI that wants to read it.
+  if (isAutoStart) return
 
   const t = i18n.t.bind(i18n)
 

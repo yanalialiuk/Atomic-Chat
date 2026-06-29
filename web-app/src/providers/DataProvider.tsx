@@ -18,6 +18,10 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { switchToModel } from '@/utils/switchModel'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import { isOnboardingPending } from '@/lib/onboarding'
+import { ensureRegistryLoaded } from '@/stores/provider-registry-store'
+import { consumeSilentImport } from '@/utils/backgroundImports'
 import { isDev, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { AppEvent, events, ModelEvent } from '@janhq/core'
 import { toast } from 'sonner'
@@ -275,6 +279,30 @@ export function DataProvider() {
         return
       }
 
+      // Background bulk-imports (onboarding adds every detected model to the
+      // library by design) emit `onModelImported` too. Auto-switching to them
+      // would hijack the model the user actually picked. This registry is
+      // independent of any screen lifecycle, so it also covers imports that
+      // settle AFTER the onboarding screen unmounts (when `onboardingActive` is
+      // already false again).
+      if (consumeSilentImport(modelId)) {
+        console.log(
+          '[LocalAPI] onModelImported: silent (background) import, skipping auto-switch for',
+          modelId
+        )
+        return
+      }
+
+      // While onboarding is on screen it launches the chosen model itself, so
+      // DataProvider stands down entirely to avoid double-launching it.
+      if (useModelLoad.getState().onboardingActive) {
+        console.log(
+          '[LocalAPI] onModelImported: onboarding active, skipping auto-switch for',
+          modelId
+        )
+        return
+      }
+
       // Resolve the provider against the *post-setProviders* store, not the
       // raw `getProviders()` payload. On Windows the store strips the
       // turboquant `'llamacpp'` provider (ADR 2026-05-22 *Windows ships only
@@ -348,6 +376,7 @@ export function DataProvider() {
           modelId,
           providerName,
           serviceHub,
+          isAutoStart: true,
         })
         console.log('[LocalAPI] Model imported and switched to:', modelId)
       } catch (error) {
@@ -577,6 +606,14 @@ export function DataProvider() {
         const fetchedProviders = await serviceHub.providers().getProviders()
         setProviders(fetchedProviders)
         const allProviders = useModelProvider.getState().providers
+
+        await ensureRegistryLoaded()
+        if (isOnboardingPending(allProviders)) {
+          console.log(
+            '[LocalAPI:startup] Onboarding pending; skipping startup auto-start'
+          )
+          return
+        }
         const localModels = allProviders
           .filter(
             (p) =>
@@ -726,6 +763,7 @@ export function DataProvider() {
           modelId: modelToStart.model,
           providerName: modelToStart.provider,
           serviceHub,
+          isAutoStart: true,
         })
       } catch (error) {
         console.error('[LocalAPI:startup] Failed to auto-start server:', error)
