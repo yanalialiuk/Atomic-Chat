@@ -265,6 +265,12 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           <span className="text-sm font-semibold text-white">O</span>
         </IconBox>
       )
+    case 'n8n':
+      return (
+        <IconBox bg="#ff6d5a">
+          <span className="text-xs font-bold text-white">n8n</span>
+        </IconBox>
+      )
     default:
       return (
         <IconBox bg="#52525b">

@@ -307,4 +307,26 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
       ],
     },
   },
+  {
+    id: 'n8n',
+    name: 'n8n',
+    description:
+      'Workflow automation with AI nodes powered by your local models.',
+    kind: 'automation',
+    detectBin: 'n8n',
+    docsUrl: 'https://docs.n8n.io/integrations/builtin/credentials/ollama/',
+    installable: false,
+    configurable: false,
+    requiresModel: false,
+    endpointWithPrefix: false,
+    editor: {
+      launchId: 'n8n',
+      steps: [
+        'Open n8n → Credentials → Add credential → Ollama (or OpenAI with a custom base URL).',
+        'Set Base URL to the copied value (use host.docker.internal if n8n runs in Docker).',
+        'Save and test the connection.',
+        'Add an Ollama / OpenAI chat node to a workflow and pick your Atomic Chat model.',
+      ],
+    },
+  },
 ]

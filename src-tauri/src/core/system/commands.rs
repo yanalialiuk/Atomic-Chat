@@ -3668,6 +3668,17 @@ pub fn launch_editor(editor_id: String) -> Result<(), String> {
             log::info!("Opened Onyx at http://localhost:3000");
             return Ok(());
         }
+        "n8n" => {
+            for cli in &["n8n"] {
+                if try_spawn(cli, &["start"]) {
+                    log::info!("Launched n8n via '{} start'", cli);
+                    return Ok(());
+                }
+            }
+            open_web_url("http://localhost:5678")?;
+            log::info!("Opened n8n UI at http://localhost:5678");
+            return Ok(());
+        }
         other => return Err(format!("Unknown editor: {}", other)),
     };
 
