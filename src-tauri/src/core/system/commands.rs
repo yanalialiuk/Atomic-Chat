@@ -3590,6 +3590,27 @@ pub fn open_agent_terminal(
     Ok(())
 }
 
+/// Open a URL in the user's default browser (cross-platform).
+fn open_web_url(url: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let result = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .status()
+    } else if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).status()
+    } else {
+        Command::new("xdg-open").arg(url).status()
+    };
+
+    match result {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => Err(format!("Failed to open {}", url)),
+        Err(e) => Err(format!("Failed to open {}: {}", url, e)),
+    }
+}
+
 /// Launch a GUI editor for the "IDEs & Editors" integrations (VS Code,
 /// JetBrains, Xcode).
 ///
@@ -3641,6 +3662,12 @@ pub fn launch_editor(editor_id: String) -> Result<(), String> {
         // Xcode is macOS-only and ships no general-purpose launcher binary
         // (`xed` needs a file argument), so we open the app directly.
         "xcode" => (&[], Some("Xcode")),
+        // Self-hosted web UIs — open the default local URL in the browser.
+        "onyx" => {
+            open_web_url("http://localhost:3000")?;
+            log::info!("Opened Onyx at http://localhost:3000");
+            return Ok(());
+        }
         other => return Err(format!("Unknown editor: {}", other)),
     };
 

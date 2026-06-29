@@ -16,6 +16,7 @@ import {
 import { route } from '@/constants/routes'
 import {
   INTEGRATION_AGENTS,
+  MANUAL_SETUP_KINDS,
   type IntegrationAgent,
 } from '@/constants/integrations'
 import HeaderPage from '@/containers/HeaderPage'
@@ -25,9 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useAppState } from '@/hooks/useAppState'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
@@ -41,29 +40,6 @@ export const Route = createFileRoute(route.launch.index as any)({
 // Only reveal the in-button spinner once an action has been running longer
 // than this; near-instant config writes finish first and never flash it.
 const SPINNER_DELAY_MS = 350
-
-// Snapshot the app proxy config (if enabled) into the payload the Rust
-// `install_agent` / `open_agent_terminal` commands expect, so spawned installers
-// and the launched agent can reach the network behind a region block. Returns
-// undefined when no proxy is configured, so the commands omit proxy env.
-function buildProxyPayload():
-  | { url: string; username?: string; password?: string; no_proxy?: string }
-  | undefined {
-  const {
-    proxyEnabled,
-    proxyUrl,
-    proxyUsername,
-    proxyPassword,
-    noProxy,
-  } = useProxyConfig.getState()
-  if (!proxyEnabled || !proxyUrl.trim()) return undefined
-  return {
-    url: proxyUrl.trim(),
-    username: proxyUsername.trim() || undefined,
-    password: proxyPassword || undefined,
-    no_proxy: noProxy.trim() || undefined,
-  }
-}
 
 function IconBox({
   children,
@@ -137,27 +113,6 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
                 fill="#F1ECEC"
               />
             </g>
-          </svg>
-        </IconBox>
-      )
-    case 'zed':
-      // Official Zed brand mark (assets/images/zed_logo.svg from zed-industries/zed),
-      // rendered light-on-dark to match Zed's app icon.
-      return (
-        <IconBox bg="#0c0d0e">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 96 96"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M9 6C7.34315 6 6 7.34315 6 9V75H0V9C0 4.02944 4.02944 0 9 0H89.3787C93.3878 0 95.3955 4.84715 92.5607 7.68198L43.0551 57.1875H57V51H63V58.6875C63 61.1728 60.9853 63.1875 58.5 63.1875H37.0551L26.7426 73.5H73.5V36H79.5V73.5C79.5 76.8137 76.8137 79.5 73.5 79.5H20.7426L10.2426 90H87C88.6569 90 90 88.6569 90 87V21H96V87C96 91.9706 91.9706 96 87 96H6.62132C2.61224 96 0.604504 91.1529 3.43934 88.318L52.7574 39H39V45H33V37.5C33 35.0147 35.0147 33 37.5 33H58.7574L69.2574 22.5H22.5V60H16.5V22.5C16.5 19.1863 19.1863 16.5 22.5 16.5H75.2574L85.7574 6H9Z"
-              fill="#ffffff"
-            />
           </svg>
         </IconBox>
       )
@@ -304,6 +259,12 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           />
         </IconBox>
       )
+    case 'onyx':
+      return (
+        <IconBox bg="#1e3a5f">
+          <span className="text-sm font-semibold text-white">O</span>
+        </IconBox>
+      )
     default:
       return (
         <IconBox bg="#52525b">
@@ -370,11 +331,7 @@ function CustomPathRow({
           onKeyDown={(e) => {
             if (e.key === 'Enter') onSave(draft)
           }}
-          placeholder={t(
-            IS_WINDOWS
-              ? 'launch:customPathPlaceholderWindows'
-              : 'launch:customPathPlaceholder'
-          )}
+          placeholder={t('launch:customPathPlaceholder')}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
@@ -471,11 +428,6 @@ function LaunchPage() {
     INTEGRATION_AGENTS.forEach((agent) => detect(agent))
   }, [detect])
 
-  // First visit clears the sidebar "New" pill on Integrations.
-  useEffect(() => {
-    useGeneralSetting.getState().markIntegrationsBadgeSeen()
-  }, [])
-
   useEffect(() => {
     refreshRunningModels()
   }, [refreshRunningModels, serverStatus])
@@ -534,10 +486,7 @@ function LaunchPage() {
             }))
           }
         )
-        await invoke('install_agent', {
-          agentId: agent.id,
-          proxy: buildProxyPayload(),
-        })
+        await invoke('install_agent', { agentId: agent.id })
         toast.success(t('launch:toast.installSuccess', { name: agent.name }), {
           description: t('launch:toast.installSuccessDesc', {
             name: agent.name,
@@ -547,15 +496,8 @@ function LaunchPage() {
         return true
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        // Surface a localized, actionable hint for network/DNS failures
-        // (commonly a region block with no proxy); keep the raw detail otherwise.
-        const isNetworkFailure = /dns|tunnel|proxy|os error 11001|wsahost_not_found|could not reach the network|resolve host|getaddrinfo|name resolution/i.test(
-          msg
-        )
         toast.error(t('launch:toast.installFailed', { name: agent.name }), {
-          description: isNetworkFailure
-            ? t('launch:toast.installFailedNetworkDesc')
-            : msg,
+          description: msg,
         })
         return false
       } finally {
@@ -608,9 +550,6 @@ function LaunchPage() {
         case 'mimo':
           await invoke('configure_mimo', { apiUrl, model, apiKey: key })
           break
-        case 'zed':
-          await invoke('configure_zed', { apiUrl, model, apiKey: key })
-          break
         case 'copilot':
           await invoke('configure_copilot', { apiUrl, model, apiKey: key })
           break
@@ -647,12 +586,7 @@ function LaunchPage() {
       }
 
       toast.success(t('launch:toast.configured', { name: agent.name }), {
-        description: t(
-          agent.id === 'zed'
-            ? 'launch:toast.configuredDescEditor'
-            : 'launch:toast.configuredDesc',
-          { name: agent.name }
-        ),
+        description: t('launch:toast.configuredDesc', { name: agent.name }),
         duration: 8000,
       })
     },
@@ -696,14 +630,6 @@ function LaunchPage() {
         // Config is written; open a terminal running the agent so the user can
         // start immediately. A terminal failure must not fail the whole Run.
         try {
-          // Zed is a desktop editor, not a terminal agent: its AI agent lives
-          // in its own window. Launch the app directly (no terminal) — the
-          // config we just wrote points its native Atomic Chat provider at the
-          // local server, and the user drives the Agent Panel from there.
-          if (agent.id === 'zed') {
-            await invoke('launch_zed')
-            return
-          }
           // OpenClaw's bare `openclaw` entry is the Crestodian setup/repair
           // helper (deterministic commands), not a chat. `openclaw chat` runs
           // the embedded local agent runtime, so the user lands straight in a
@@ -722,10 +648,7 @@ function LaunchPage() {
           } else {
             command = agent.detectBin
           }
-          await invoke('open_agent_terminal', {
-            command,
-            proxy: buildProxyPayload(),
-          })
+          await invoke('open_agent_terminal', { command })
         } catch (termErr) {
           const tmsg =
             termErr instanceof Error ? termErr.message : String(termErr)
@@ -836,9 +759,14 @@ function LaunchPage() {
 
   const coding = INTEGRATION_AGENTS.filter((a) => a.kind === 'coding')
   const assistants = INTEGRATION_AGENTS.filter((a) => a.kind === 'assistant')
-  const editors = INTEGRATION_AGENTS.filter((a) => a.kind === 'editor')
+  const manualIntegrations = INTEGRATION_AGENTS.filter((a) =>
+    MANUAL_SETUP_KINDS.includes(a.kind)
+  )
+  const chatRag = INTEGRATION_AGENTS.filter((a) => a.kind === 'chat')
+  const automation = INTEGRATION_AGENTS.filter((a) => a.kind === 'automation')
+  const notebooks = INTEGRATION_AGENTS.filter((a) => a.kind === 'notebook')
 
-  const renderEditor = (agent: IntegrationAgent) => {
+  const renderManualIntegration = (agent: IntegrationAgent) => {
     const isInstalled = installed[agent.id]
     const isBusy = editorBusy[agent.id]
     const steps = agent.editor?.steps ?? []
@@ -1113,7 +1041,7 @@ function LaunchPage() {
             {coding.map(renderAgent)}
           </section>
 
-          {editors.length > 0 && (
+          {manualIntegrations.length > 0 && (
             <section className="flex flex-col gap-3">
               <div>
                 <h1 className="font-studio text-lg font-medium text-foreground">
@@ -1123,7 +1051,51 @@ function LaunchPage() {
                   {t('launch:editorsDesc')}
                 </p>
               </div>
-              {editors.map(renderEditor)}
+              {manualIntegrations
+                .filter((a) => a.kind === 'editor')
+                .map(renderManualIntegration)}
+            </section>
+          )}
+
+          {chatRag.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h1 className="font-studio text-lg font-medium text-foreground">
+                  {t('launch:chatRag')}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t('launch:chatRagDesc')}
+                </p>
+              </div>
+              {chatRag.map(renderManualIntegration)}
+            </section>
+          )}
+
+          {automation.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h1 className="font-studio text-lg font-medium text-foreground">
+                  {t('launch:automation')}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t('launch:automationDesc')}
+                </p>
+              </div>
+              {automation.map(renderManualIntegration)}
+            </section>
+          )}
+
+          {notebooks.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h1 className="font-studio text-lg font-medium text-foreground">
+                  {t('launch:notebooks')}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t('launch:notebooksDesc')}
+                </p>
+              </div>
+              {notebooks.map(renderManualIntegration)}
             </section>
           )}
         </div>

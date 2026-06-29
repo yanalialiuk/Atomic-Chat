@@ -1,4 +1,18 @@
-export type IntegrationKind = 'coding' | 'assistant' | 'editor'
+export type IntegrationKind =
+  | 'coding'
+  | 'assistant'
+  | 'editor'
+  | 'chat'
+  | 'automation'
+  | 'notebook'
+
+/** Integrations that use copy-settings + launch + manual steps (no config file). */
+export const MANUAL_SETUP_KINDS: IntegrationKind[] = [
+  'editor',
+  'chat',
+  'automation',
+  'notebook',
+]
 
 /**
  * Ordered manual-setup instructions shown inside an editor card. These mirror
@@ -119,20 +133,6 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
-    endpointWithPrefix: true,
-  },
-  {
-    id: 'zed',
-    name: 'Zed',
-    description: 'High-performance code editor with a built-in AI agent.',
-    kind: 'coding',
-    detectBin: 'zed',
-    docsUrl: 'https://zed.dev/docs/ai/llm-providers',
-    installable: true,
-    configurable: true,
-    requiresModel: true,
-    // Zed's native Atomic Chat provider expects the OpenAI-compatible base URL
-    // with the `/v1` prefix (matches its built-in default).
     endpointWithPrefix: true,
   },
   {
@@ -282,6 +282,28 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
         'Click "Add a Model Provider" and choose "Locally Hosted".',
         'Enter the port from the copied Base URL (default 1337); Xcode adds the /v1 path itself.',
         'Restart Xcode if the models do not appear, then pick the Atomic Chat model.',
+      ],
+    },
+  },
+  {
+    id: 'onyx',
+    name: 'Onyx',
+    description:
+      'Self-hostable chat UI with RAG, agents, connectors, and deep research.',
+    kind: 'chat',
+    detectBin: 'docker',
+    docsUrl: 'https://docs.onyx.app/deployment/quickstart',
+    installable: false,
+    configurable: false,
+    requiresModel: false,
+    endpointWithPrefix: true,
+    editor: {
+      launchId: 'onyx',
+      steps: [
+        'Deploy Onyx (see Docs) and sign in to your instance.',
+        'During setup, add an OpenAI-compatible LLM provider.',
+        'Paste the copied Base URL and API key (use host.docker.internal instead of 127.0.0.1 if Onyx runs in Docker).',
+        'Select your Atomic Chat model and send a test message.',
       ],
     },
   },
